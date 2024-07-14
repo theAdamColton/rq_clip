@@ -167,8 +167,8 @@ class VQAdapterModel(PreTrainedModel):
         """
         z: B by D
         """
-        z = self.in_feature_net(z)
-        z, codes, loss = self.vq(z.unsqueeze(1))
+        z = self.in_feature_net(z) # torch.Size([1, 768])
+        z, codes, loss = self.vq(z.unsqueeze(1)) # torch.Size([1,1,768]), torch.Size([1,1,32])
         loss = loss.mean()
         z = z.squeeze(1)
         codes = codes.squeeze(1)

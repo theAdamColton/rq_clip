@@ -198,8 +198,8 @@ class VQCLIPModel(PreTrainedModel):
             return_dict=return_dict,
         )
 
-        image_embeds = vision_outputs[1]
-        image_embeds = self.clip_model.visual_projection(image_embeds)
+        image_embeds = vision_outputs[1] # torch.Size([1,1024])
+        image_embeds = self.clip_model.visual_projection(image_embeds) # torch.Size([1,768])
 
         text_embeds = text_outputs[1]
         text_embeds = self.clip_model.text_projection(text_embeds)
