@@ -1,0 +1,9 @@
+**/*/__pycache__/
+__pycache__/
+ckpt/
+out/
+build/
+vq_clip.egg-info/
+
+.vq-clip
+
