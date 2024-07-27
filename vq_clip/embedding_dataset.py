@@ -29,7 +29,12 @@ def random_sort(*lists):
 
 class IterableMinecraftDataset(IterableDataset):
     def __init__(self, path: str, batch_size: int, ):
-        self.img_files = glob(os.path.join(path, "1_10/*.npy")) #ToDo
+        if path == "/131_data/jihwan/data/minecraft_clip/train/1_11":
+            self.img_files = glob(os.path.join(path, "000000_*.npy"))
+
+        else:
+            self.img_files = glob(os.path.join(path, "*.npy")) #ToDo
+        
         self.img_files.sort(key=get_file_code)
 
         assert len(self.img_files) > 0
@@ -68,14 +73,14 @@ class MinecraftDatasetWorker(IterableDataset):
         num_files_to_load = min(
             len(self.img_files) - self.file_i, self.num_files_to_load
         )
-        print("__iter_file loading files ", num_files_to_load)
+        # print("__iter_file loading files ", num_files_to_load)
 
         image_data = []
         n_loaded = 0
         while n_loaded < num_files_to_load:
-            print("Loading files", self.img_files[self.file_i])
+            # print("Loading files", self.img_files[self.file_i])
             try:
-                img_dat = np.load(self.img_files[self.file_i])
+                img_dat = np.load(self.img_files[self.file_i])[None]
 
                 image_data.append(img_dat)
                 n_loaded += 1
@@ -268,8 +273,8 @@ class MinecraftEmbeddingDataModule(pl.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
 
-        self.ds_train = IterableImageTextPairDataset(path_train, batch_size, )
-        self.ds_test = IterableImageTextPairDataset(path_val, batch_size, )
+        self.ds_train = IterableMinecraftDataset(path_train, batch_size, )
+        self.ds_test = IterableMinecraftDataset(path_val, batch_size, )
 
     def train_dataloader(self):
         return DataLoader(self.ds_train, num_workers=4, batch_size=None, shuffle=False)

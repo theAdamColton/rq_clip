@@ -20,7 +20,7 @@ def main():
     experiment = "1_10"
 
     nowname = f"{experiment}-{now}"
-
+    
     cli = LightningCLI(
         MinecraftVQCLIPTrainer,
         MinecraftEmbeddingDataModule,
@@ -31,8 +31,14 @@ def main():
                     save_last=True,
                 ),
             ],
-            "logger": WandbLogger(project="vq-clip-minecraft", name=nowname),
+            "strategy": "ddp_find_unused_parameters_true",
+            "default_root_dir": f"logs/{nowname}",
+            # "logger": WandbLogger(project="vq-clip-minecraft", name=nowname),
         },
+        save_config_kwargs={
+            "overwrite": True
+        },
+        
     )
 
 

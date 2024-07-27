@@ -222,7 +222,6 @@ class MinecraftVQCLIPTrainer(pl.LightningModule):
         # with torch.no_grad():
         #     # TODO Assumes logit_scale.exp() = 100.
         #     pre_quant_contrastive_loss = clip_loss_from_embeds(img_emb, text_emb, 100.0)
-
         res = self.vision_vq_adapter(img_emb, return_perplexity=True)
         img_emb = res["z"]
         quant_loss = res["loss"]

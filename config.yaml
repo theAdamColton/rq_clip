@@ -1,8 +1,8 @@
-# lightning.pytorch==2.1.0dev
+# lightning.pytorch==2.0.3
 seed_everything: true
 trainer:
   accelerator: auto
-  # strategy: ddp_find_unused_parameters_true
+  strategy: ddp_find_unused_parameters_true
   devices: auto
   num_nodes: 1
   precision: bf16-mixed
@@ -39,21 +39,18 @@ trainer:
   plugins: null
   sync_batchnorm: false
   reload_dataloaders_every_n_epochs: 0
-  # default_root_dir: null
-
+  default_root_dir: null
 model:
-  pretrained_clip_url: openai/clip-vit-large-patch14
   vision_vq_config_path: model_conf/vq-ViT-L-14-k64/config.json
+  pretrained_clip_url: openai/clip-vit-large-patch14
   warmup_steps: 50
-  max_lr: 3.e-4
-  min_lr: 5.e-6
+  max_lr: 0.0003
+  min_lr: 5.0e-06
   lr_gamma: 0.25
   lr_cycle_steps: 20000
-
+  torch_compile: false
   imagenet_path: null
   validation_batch_size: 512
-
-  torch_compile: false
 data:
   path_train: /131_data/jihwan/data/minecraft_clip/train/1_10
   path_val: /131_data/jihwan/data/minecraft_clip/train/1_11
