@@ -1,3 +1,4 @@
+import os
 import torch
 from torch import nn
 import lightning.pytorch as pl
@@ -138,7 +139,7 @@ class LightningVQCLIPTrainer(pl.LightningModule):
                             self.validation_batch_size,
                         )
                 self.log_dict(dict(imagenet_top1=top1, imagenet_top5=top5))
-
+        
         self.eval()
         img_emb, text_emb = batch
         loss, logs = self.step(img_emb, text_emb)
@@ -210,7 +211,12 @@ class MinecraftVQCLIPTrainer(pl.LightningModule):
         self.save_hyperparameters()
 
     def on_save_checkpoint(self, _):
-        self.save_hf(self.logger.log_dir + "/hf/")
+        if self.logger.log_dir is not None:
+            self.save_hf(self.logger.log_dir + "/hf/")
+        else:
+            print("Saving hf to", f"{self.logger.name}/hf")
+            path = os.path.join(f"{self.logger.name}", "hf")
+            self.save_hf(path)
 
     def save_hf(self, path: str = ""):
         self.vision_vq_adapter.save_pretrained(path)
@@ -242,34 +248,10 @@ class MinecraftVQCLIPTrainer(pl.LightningModule):
         return loss, logs
 
     def validation_step(self, batch, batch_idx):
-        # if batch_idx == 0:
-        #     # Builds temporary clip model
-        #     tmp_dir = "/tmp/vq-vision/"
-        #     self.save_hf(tmp_dir)
-        #     vq_clip = VQCLIPModel.from_pretrained_clip(self.clip_url, vision_vq_adapter_path=tmp_dir)
-        #     vq_clip.to(self.device)
-        #     # uncomment to see how performance w/o adapters is the same as normal pretrained CLIP
-        #     # vq_clip.vision_vq_adapter = None
-        #     # vq_clip.text_vq_adapter = None
-
-        #     processor = CLIPProcessor.from_pretrained(self.clip_url)
-
-        #     if self.imagenet_path is not None:
-        #         with torch.no_grad():
-        #             with torch.autocast("cuda"):
-        #                 top1, top5 = zero_shot_eval(
-        #                     vq_clip,
-        #                     processor,
-        #                     self.imagenet_path,
-        #                     self.validation_batch_size,
-        #                 )
-        #         self.log_dict(dict(imagenet_top1=top1, imagenet_top5=top5))
-
-        self.eval()
+        self.train()
         img_emb = batch
         loss, logs = self.step(img_emb)
-
-        self.log("val/loss", loss)
+        self.log("val/loss", loss, sync_dist=True)
         self.log_dict({"v_" + k: v for k, v in logs.items()})
         return loss
 

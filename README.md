@@ -74,8 +74,9 @@ You can manually cut a single npx file from the downloaded data to be used as th
 
 # Training
 
+
 ```
-python train_rqclip_from_preembed.py fit -c conf/VQ-ViT-L-14.yaml --data.path_train /path/to/size/metadata/ --data.path_val /path/to/validation/metadata/ --model.vq_clip_config_path model_conf/vq-ViT-L-14-k1024/config.json
+python3 train_vqclip_minecraft.py fit -c training_conf/VQ-ViT-L-14-minecraft.yaml 
 ```
 
 By default, training uses ~7GB VRAM, and saves a checkpoint and evaluates every 1000 steps
