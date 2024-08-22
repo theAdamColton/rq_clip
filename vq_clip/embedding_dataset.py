@@ -18,6 +18,7 @@ import six
 import lmdb
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from tqdm import tqdm
+import pickle
 
 def get_file_code(filename: str):
     return os.path.basename(filename).split(".")[-2]
@@ -71,29 +72,35 @@ class MinecraftIterableDataset(IterableDataset):
 
 class MinecraftDatasetLMDB(Dataset):
     def __init__(self, path: str, lmdb_path: str):
-        self.clip_files = sorted(glob(os.path.join(path, "*/*.npy")))
+        self.clip_files = sorted(glob(os.path.join(path, "*.npy")))
 
-        assert len(self.img_files) > 0
-        print("Found", len(self.img_files), "files")
+        assert len(self.clip_files) > 0
+        print("Found", len(self.clip_files), "files")
 
         self.lmdb = None
         self.lmdb_out_path = lmdb_path
+
+        self.indices_path  = os.path.join(self.lmdb_out_path, "indices.pkl")
+        self.indices = None
+        if os.path.exists(self.indices_path):
+            self.indices = pickle.load(open(self.indices, "rb"))
+
     
     def __len__(self):
-        return len(self.img_files)
+        return len(self.indices)
 
     def __getitem__(self, idx):
         if self.lmdb is None:
             self._init_lmdb()
         
-        clip_path = self.clip_files[idx]
+        clip_path, data_idx = self.indices[idx]
         clip_buf = self.lmdb.begin(write=False).get(clip_path.encode())
         buf = six.BytesIO()
         buf.write(clip_buf)
         buf.seek(0)
         data = np.load(buf)
         
-        return data
+        return data[data_idx]
 
     def _init_lmdb(self):
         self.lmdb = lmdb.open(self.lmdb_out_path, readonly=True, lock=False, readahead=True, meminit=False)
@@ -102,11 +109,19 @@ class MinecraftDatasetLMDB(Dataset):
         if os.path.exist(self.lmdb_out_path):
             print("LMDB database already exists. Not generating new LMDB datasbse")
         
+        file_lens = []
+        indices = []
         with lmdb.open(self.lmdb_out_path, map_size=220*1e9).begin(write=True) as txn:
             for img_file in tqdm(self.clip_files):
-                raw_clip_bytes = np.load(img_file).tobytes()
+                clip_np = np.load(img_file)
+                file_lens.append(len(clip_np))
+                indices.extend([(img_file, i) for i in range(len(clip_np))])
+
+                raw_clip_bytes = clip_np.tobytes()
                 txn.put(img_file.encode(), raw_clip_bytes)
             txn.commit()
+        
+        pickle.dump(indices, open(self.indices_path, "wb"))
         print("LMDB database created at", self.lmdb_out_path)
         print(f"Wrote {len(self.clip_files)} files")
 
