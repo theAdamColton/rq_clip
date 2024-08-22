@@ -248,6 +248,7 @@ class MinecraftVQCLIPTrainer(pl.LightningModule):
         return loss, logs
 
     def validation_step(self, batch, batch_idx):
+        print("Run validation step")
         self.train()
         img_emb = batch
         loss, logs = self.step(img_emb)

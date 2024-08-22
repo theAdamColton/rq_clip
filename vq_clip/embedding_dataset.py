@@ -14,9 +14,10 @@ import numpy as np
 from glob import glob
 import re
 import os
-
+import six
+import lmdb
 from torch.utils.data import DataLoader, Dataset, IterableDataset
-
+from tqdm import tqdm
 
 def get_file_code(filename: str):
     return os.path.basename(filename).split(".")[-2]
@@ -68,100 +69,46 @@ class MinecraftIterableDataset(IterableDataset):
         return np.load(file_path)
 
 
+class MinecraftDatasetLMDB(Dataset):
+    def __init__(self, path: str, lmdb_path: str):
+        self.clip_files = sorted(glob(os.path.join(path, "*/*.npy")))
 
-# class IterableMinecraftDataset(IterableDataset):
-#     def __init__(self, path: str, batch_size: int, ):
-#         # if path == "/131_data/jihwan/data/minecraft_clip/train/1_11":
-#         #     self.img_files = glob(os.path.join(path, "*_0000.npy"))
-#         # else:
-#         self.img_files = glob(os.path.join(path, "*/*.npy")) #ToDo
-        
-#         self.img_files.sort(key=get_file_code)
+        assert len(self.img_files) > 0
+        print("Found", len(self.img_files), "files")
 
-#         assert len(self.img_files) > 0
-#         print("Found", len(self.img_files), "files")
-
-#         self.batch_size = batch_size
-#         print("Batch size", self.batch_size)
-
-#     def __iter__(self):
-#         worker_info = torch.utils.data.get_worker_info()
-#         if worker_info is None:
-#             start, end = 0, len(self.img_files)
-#         else:
-#             n_files_per_worker = len(self.img_files) // worker_info.num_workers
-#             worker_id = worker_info.id
-#             start = worker_id * n_files_per_worker
-#             end = min(start + n_files_per_worker, len(self.img_files))
-#         return MinecraftDatasetWorker(
-#             self.img_files[start:end],
-#             batch_size=self.batch_size,
-#         )
+        self.lmdb = None
+        self.lmdb_out_path = lmdb_path
     
-#     def  __len__(self):
-#         return len(self.img_files)
+    def __len__(self):
+        return len(self.img_files)
 
+    def __getitem__(self, idx):
+        if self.lmdb is None:
+            self._init_lmdb()
+        
+        clip_path = self.clip_files[idx]
+        clip_buf = self.lmdb.begin(write=False).get(clip_path.encode())
+        buf = six.BytesIO()
+        buf.write(clip_buf)
+        buf.seek(0)
+        data = np.load(buf)
+        
+        return data
 
-# class MinecraftDatasetWorker(IterableDataset):
-#     def __init__(self, img_files: List[str], batch_size: int, ):
-#         self.img_files = img_files
-
-#         # increasing this number improves random sampling
-#         self.num_files_to_load = 2
-
-#         self.batch_size = batch_size
-
-#         self.file_i = 0
-#         self.batch_i = 0
-#         self.__iter_file()
-
-#     def __iter_file(self):
-#         num_files_to_load = min(
-#             len(self.img_files) - self.file_i, self.num_files_to_load
-#         )
-#         # print("__iter_file loading files ", num_files_to_load)
-
-#         image_data = []
-#         n_loaded = 0
-#         while n_loaded < num_files_to_load:
-#             # print("Loading files", self.img_files[self.file_i])
-#             try:
-#                 img_dat = np.load(self.img_files[self.file_i])[None]
-
-#                 image_data.append(img_dat)
-#                 n_loaded += 1
-
-#             except Exception as e:
-#                 print("error loading files", self.img_files[self.file_i], e)
-#             self.file_i += 1
-
-#         image_data = np.concatenate(image_data, axis=0)
-
-#         rnd_indices = np.random.permutation(len(image_data))
-
-#         image_data = image_data[rnd_indices]
-
-#         self.image_data = np.array_split(
-#             image_data, ceil(len(image_data) / self.batch_size)
-#         )
-#         self.batch_i = 0
-
-#     def __iter__(self):
-#         return self
-
-#     def __len__(self):
-#         n_files = len(self.img_files)
-#         return n_files
-
-#     def __next__(self):
-#         if self.batch_i >= len(self.image_data):
-#             if self.file_i >= len(self.img_files):
-#                 raise StopIteration
-#             else:
-#                 self.__iter_file()
-#         _ret = self.image_data[self.batch_i]
-#         self.batch_i += 1
-#         return _ret
+    def _init_lmdb(self):
+        self.lmdb = lmdb.open(self.lmdb_out_path, readonly=True, lock=False, readahead=True, meminit=False)
+    
+    def create_lmdb_database(self):
+        if os.path.exist(self.lmdb_out_path):
+            print("LMDB database already exists. Not generating new LMDB datasbse")
+        
+        with lmdb.open(self.lmdb_out_path, map_size=220*1e9).begin(write=True) as txn:
+            for img_file in tqdm(self.clip_files):
+                raw_clip_bytes = np.load(img_file).tobytes()
+                txn.put(img_file.encode(), raw_clip_bytes)
+            txn.commit()
+        print("LMDB database created at", self.lmdb_out_path)
+        print(f"Wrote {len(self.clip_files)} files")
 
 
 class MinecraftEmbeddingDataModule(pl.LightningDataModule):
@@ -186,8 +133,8 @@ class MinecraftEmbeddingDataModule(pl.LightningDataModule):
         # self.ds_train = IterableMinecraftDataset(path_train, batch_size, )
         # self.ds_test = IterableMinecraftDataset(path_val, batch_size, )
 
-        self.ds_train = MinecraftIterableDataset(path_train)
-        self.ds_test = MinecraftIterableDataset(path_val)
+        self.ds_train = MinecraftDatasetLMDB(path_train)
+        self.ds_test = MinecraftDatasetLMDB(path_val)
 
     def train_dataloader(self):
         return DataLoader(self.ds_train, num_workers=32, batch_size=self.batch_size, shuffle=False)
@@ -195,139 +142,8 @@ class MinecraftEmbeddingDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.ds_test, num_workers=4, batch_size=self.batch_size, shuffle=False)
     
-
-class IterableImageTextPairDataset(IterableDataset):
-    def __init__(self, path: str, batch_size: int, ):
-        self.img_files = glob(path + "/image/*.npy")
-        self.img_files.sort(key=get_file_code)
-
-        self.txt_files = glob(path + "/text/*.npy")
-        self.txt_files.sort(key=get_file_code)
-
-        assert len(self.img_files) > 0
-        assert len(self.img_files) == len(self.txt_files)
-
-        for txt_file, img_file in zip(self.txt_files, self.img_files):
-                assert os.path.basename(txt_file) == os.path.basename(img_file), f'{txt_file} != {img_file}'
-
-        self.batch_size = batch_size
-
-    def __iter__(self):
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info is None:
-            start, end = 0, len(self.img_files)
-        else:
-            n_files_per_worker = len(self.img_files) // worker_info.num_workers
-            worker_id = worker_info.id
-            start = worker_id * n_files_per_worker
-            end = min(start + n_files_per_worker, len(self.img_files))
-        return ImageTextPairDatasetWorker(
-            self.img_files[start:end],
-            self.txt_files[start:end],
-            batch_size=self.batch_size,
-        )
-
-
-class ImageTextPairDatasetWorker(IterableDataset):
-    def __init__(self, img_files: List[str], txt_files: List[str], batch_size: int, ):
-        self.img_files = img_files
-        self.txt_files = txt_files
-        assert len(self.img_files) == len(self.txt_files)
-
-        # increasing this number improves random sampling
-        self.num_files_to_load = 2
-
-        self.batch_size = batch_size
-
-        self.file_i = 0
-        self.batch_i = 0
-        self.__iter_file()
-
-    def __iter_file(self):
-        num_files_to_load = min(
-            len(self.txt_files) - self.file_i, self.num_files_to_load
-        )
-        print("__iter_file loading files ", num_files_to_load)
-        text_data = []
-        image_data = []
-        n_loaded = 0
-        while n_loaded < num_files_to_load:
-            print("Loading files", self.txt_files[self.file_i], self.img_files[self.file_i])
-            try:
-                img_dat = np.load(self.img_files[self.file_i])
-                txt_dat = np.load(self.txt_files[self.file_i])
-
-                assert len(img_dat) == len(txt_dat)
-
-                text_data.append(img_dat)
-                image_data.append(txt_dat)
-                n_loaded += 1
-                assert len(text_data[-1]) == len(image_data[-1])
-                assert len(text_data[0]) == len(image_data[0])
-            except Exception as e:
-                print("error loading files", self.img_files[self.file_i], self.txt_files[self.file_i], e)
-            self.file_i += 1
-
-        text_data = np.concatenate(text_data, axis=0)
-        image_data = np.concatenate(image_data, axis=0)
-
-        rnd_indices = np.random.permutation(len(text_data))
-        text_data = text_data[rnd_indices]
-        image_data = image_data[rnd_indices]
-
-        self.text_data = np.array_split(
-            text_data, ceil(len(text_data) / self.batch_size)
-        )
-        self.image_data = np.array_split(
-            image_data, ceil(len(image_data) / self.batch_size)
-        )
-        assert len(self.text_data) == len(self.image_data)
-        self.batch_i = 0
-
-    def __iter__(self):
-        return self
-
-    def __len__(self):
-        n_files = len(self.img_files)
-        num_rows_per_file = 500000
-        return n_files * num_rows_per_file // self.batch_size
-
-    def __next__(self):
-        if self.batch_i >= len(self.image_data):
-            if self.file_i >= len(self.img_files):
-                raise StopIteration
-            else:
-                self.__iter_file()
-        _ret = self.image_data[self.batch_i], self.text_data[self.batch_i]
-        self.batch_i += 1
-        return _ret
-
-
-
-class LightningEmbeddingDataModule(pl.LightningDataModule):
-    def __init__(
-        self,
-        path_train: str,
-        path_val: str,
-        batch_size: int,
-        *_,
-        **kwargs
-    ):
-        """
-        path_train: some path to a directory with the following subfolders:
-            images/*.npy
-            texts/*.npy
-
-        This module will iterate over all rows of all npy files.
-        """
-        super().__init__()
-        self.batch_size = batch_size
-
-        self.ds_train = IterableImageTextPairDataset(path_train, batch_size, )
-        self.ds_test = IterableImageTextPairDataset(path_val, batch_size, )
-
-    def train_dataloader(self):
-        return DataLoader(self.ds_train, num_workers=4, batch_size=None, shuffle=False)
-
-    def val_dataloader(self):
-        return DataLoader(self.ds_test, num_workers=1, batch_size=None, shuffle=False)
+if __name__ == "__main__":
+    ds_train = MinecraftDatasetLMDB("/cvdata1/jihwan/data/minecraft_clip/train", "/cvdata1/jihwan/data/minecraft_clip/lmdb/train.lmdb")
+    ds_train.create_lmdb_database()
+    ds_val = MinecraftDatasetLMDB("/cvdata1/jihwan/data/minecraft_clip/test", "/cvdata1/jihwan/data/minecraft_clip/lmdb/test.lmdb")
+    ds_val.create_lmdb_database()
