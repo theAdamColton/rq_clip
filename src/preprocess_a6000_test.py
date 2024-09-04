@@ -26,12 +26,12 @@ if __name__ =="__main__":
     data_root = "/cvdata1/jihwan/minecraft"
     # output_root = "/cvdata1/jihwan/minecraft_clip"
 
-    path_train = os.path.join(data_root, "train")
+    path_test = os.path.join(data_root, "test")
 
-    paths = [path_train]
+    paths = [path_test]
 
     for path in paths:
-        folders = sorted(glob(os.path.join(path, f"{args.rank+1}_*")))
+        folders = sorted(glob(os.path.join(path, f"{args.rank}")))
 
         v_decoder = decord.VideoReader
  
