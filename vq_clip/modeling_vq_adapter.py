@@ -126,12 +126,12 @@ class VQAdapterModel(PreTrainedModel):
 
         quantizer_args["dim"] = config.clip_dim
         if config.is_rq:
-            rq_args = {
-                k.removeprefix("rq_"): v
-                for k, v in config.to_dict().items()
-                if k.startswith("rq_")
-            }
-            quantizer_args.update(rq_args)
+            # rq_args = {
+            #     k.removeprefix("rq_"): v
+            #     for k, v in config.to_dict().items()
+            #     if k.startswith("rq_")
+            # }
+            # quantizer_args.update(rq_args)
             quantizer_args["heads"] = 1
             quantizer_args["num_quantizers"] = config.vq_heads
             self.vq = ResidualVQ(**quantizer_args)
@@ -153,7 +153,20 @@ class VQAdapterModel(PreTrainedModel):
             # nn.LayerNorm(args.clip_dim),
         )
 
-        self.out_feature_net = nn.Identity()
+        self.out_feature_net = nn.Sequential(
+            # input is assumed to an already normalized clip embedding
+            nn.Linear(config.clip_dim, config.mlp_dim, bias=False),
+            nn.GELU(),
+            nn.LayerNorm(config.mlp_dim),
+            *[
+                Block(config.mlp_dim, config.mlp_hidden_dim)
+                for _ in range(config.mlp_layers)
+            ],
+            nn.Linear(config.mlp_dim, config.clip_dim, bias=False),
+            # normalize before passing to VQ?
+            # nn.GELU(),
+            # nn.LayerNorm(args.clip_dim),
+        )
 
     def decode(self, codes: torch.LongTensor):
         z = self.vq.get_codes_from_indices(codes)
@@ -167,8 +180,11 @@ class VQAdapterModel(PreTrainedModel):
         """
         z: B by D
         """
-        z = self.in_feature_net(z) # torch.Size([1, 768])
+        # z = self.in_feature_net(z) # torch.Size([1, 768])
         z, codes, loss = self.vq(z.unsqueeze(1)) # torch.Size([1,1,768]), torch.Size([1,1,32])
+        # print("codebook with shape", self.vq.codebooks)
+        # print(self.vq.codebooks.shape)
+        # print(self.vq.codebooks)
         loss = loss.mean()
         z = z.squeeze(1)
         codes = codes.squeeze(1)
@@ -176,6 +192,6 @@ class VQAdapterModel(PreTrainedModel):
             perplexity = calculate_perplexity(codes, self.config.vq_codebook_size)
         else:
             perplexity = None
-        z = self.out_feature_net(z)
+        # z = self.out_feature_net(z)
 
         return dict(z=z, codes=codes, perplexity=perplexity, loss=loss)

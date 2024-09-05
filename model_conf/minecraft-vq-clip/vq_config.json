@@ -1,0 +1,19 @@
+{
+    "architectures": [
+      "VQAdapterModel"
+    ],
+    "clip_dim": 768,
+    "codebook_lr": 10.0,
+    "torch_dtype": "float32",
+    "transformers_version": "4.30.2",
+    "vq_codebook_dim": 4,
+    "vq_codebook_size": 4,
+    "is_rq": true,
+    "vq_heads": 4,
+    "vq_use_cosine_sim": false,
+    "vq_decay": 0.8,
+    "vq_commitment_weight": 10,
+    "vq_kmeans_init": true,
+    "vq_kmeans_iters": 10
+  }
+  

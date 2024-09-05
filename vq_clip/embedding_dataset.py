@@ -71,7 +71,7 @@ class MinecraftIterableDataset(IterableDataset):
 
 
 class MinecraftDatasetLMDB(Dataset):
-    def __init__(self, path: str, lmdb_path: str):
+    def __init__(self, path: str, lmdb_path: str, length: int = None):
         self.clip_files = sorted(glob(os.path.join(path, "*.npy")))
 
         assert len(self.clip_files) > 0
@@ -80,9 +80,14 @@ class MinecraftDatasetLMDB(Dataset):
         self.lmdb = None
         self.lmdb_out_path = lmdb_path
 
-    
+        txt_path = os.path.join(lmdb_path, "index.txt")
+        if os.path.exists(txt_path):
+            with open(txt_path, "r") as f:
+                self.length = int(f.read())
+                f.close()
+
     def __len__(self):
-        return len(self.indices)
+        return self.length
 
     def __getitem__(self, idx):
         if self.lmdb is None:
@@ -90,11 +95,9 @@ class MinecraftDatasetLMDB(Dataset):
         
         # clip_path, data_idx = self.indices[idx]
         clip_buf = self.lmdb.begin(write=False).get(idx.to_bytes(8, "big"))
-        buf = six.BytesIO()
-        buf.write(clip_buf)
-        buf.seek(0)
-        data = np.frombuffer(buf)
         
+        data = np.frombuffer(clip_buf, dtype=np.float32)
+
         return data
 
     def _init_lmdb(self):
@@ -102,15 +105,15 @@ class MinecraftDatasetLMDB(Dataset):
     
     def create_lmdb_database(self):
         if os.path.exists(self.lmdb_out_path):
-            shutil.rmtree(self.lmdb_out_path)
+            # shutil.rmtree(self.lmdb_out_path)
             print("LMDB database already exists. Remove first.")
-        # else:
-        #     os.makedirs(os.path.dirname(self.lmdb_out_path), exist_ok=True)
+
         try:
             idx = 0
 
-            env = lmdb.open(self.lmdb_out_path, map_size=int(1e12), writemap=True)
+            env = lmdb.open(self.lmdb_out_path, map_size=int(1e12))
             txn = env.begin(write=True)
+            txt_path = os.path.join(self.lmdb_out_path, "index.txt")
 
             for img_file in tqdm(self.clip_files):
                 try:
@@ -122,10 +125,15 @@ class MinecraftDatasetLMDB(Dataset):
                         idx += 1
                 except Exception as e:
                     print("Error processing", img_file, e)
+                
                     
             txn.commit()
-            txn = None
+            env.sync()
             env.close()
+
+            with open(txt_path, "w") as f:
+                f.write(f"{idx}")
+                f.close()
 
         except lmdb.Error as e:
             print(f"An LMDB error occurred: {e}")
@@ -141,6 +149,8 @@ class MinecraftEmbeddingDataModule(pl.LightningDataModule):
         self,
         path_train: str,
         path_val: str,
+        path_train_lmdb: str,
+        path_val_lmdb: str,
         batch_size: int,
         *_,
         **kwargs
@@ -155,11 +165,8 @@ class MinecraftEmbeddingDataModule(pl.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
 
-        # self.ds_train = IterableMinecraftDataset(path_train, batch_size, )
-        # self.ds_test = IterableMinecraftDataset(path_val, batch_size, )
-
-        self.ds_train = MinecraftDatasetLMDB(path_train)
-        self.ds_test = MinecraftDatasetLMDB(path_val)
+        self.ds_train = MinecraftDatasetLMDB(path_train, path_train_lmdb)
+        self.ds_test = MinecraftDatasetLMDB(path_val, path_val_lmdb)
 
     def train_dataloader(self):
         return DataLoader(self.ds_train, num_workers=32, batch_size=self.batch_size, shuffle=False)
@@ -168,7 +175,7 @@ class MinecraftEmbeddingDataModule(pl.LightningDataModule):
         return DataLoader(self.ds_test, num_workers=4, batch_size=self.batch_size, shuffle=False)
     
 if __name__ == "__main__":
-    ds_train = MinecraftDatasetLMDB("/131_data/jihwan/data/minecraft_lmdb/train", "/131_data/jihwan/data/minecraft_lmdb/lmdb/train")
+    ds_train = MinecraftDatasetLMDB("/131_data/jihwan/data/minecraft_lmdb/train", "/cvdata1/jihwan/minecraft_lmdb/lmdb/train")
     ds_train.create_lmdb_database()
-    # ds_val = MinecraftDatasetLMDB("/131_data/jihwan/data/minecraft_lmdb/test", "/131_data/jihwan/data/minecraft_lmdb/lmdb/test.lmdb")
+    # ds_val = MinecraftDatasetLMDB("/131_data/jihwan/data/minecraft_lmdb/test", "/cvdata1/jihwan/minecraft_lmdb/lmdb/test")
     # ds_val.create_lmdb_database()

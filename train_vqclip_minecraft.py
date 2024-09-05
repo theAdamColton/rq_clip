@@ -18,7 +18,7 @@ from vq_clip.trainer import MinecraftVQCLIPTrainer
 
 def main():
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    experiment = "all"
+    experiment = "vq_d4_s4_r4"
 
     nowname = f"{experiment}-{now}"
     wandb_logger = WandbLogger(project="vq-clip-minecraft", name=nowname)

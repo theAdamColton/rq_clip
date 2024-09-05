@@ -101,7 +101,7 @@ class LightningVQCLIPTrainer(pl.LightningModule):
         perplexity = res["perplexity"]
 
         img_emb = img_emb / img_emb.norm(dim=-1, keepdim=True)
-
+    
         contrastive_loss = clip_loss_from_embeds(img_emb, text_emb, 100.0)
 
         loss = contrastive_loss + quant_loss
@@ -225,42 +225,41 @@ class MinecraftVQCLIPTrainer(pl.LightningModule):
         """
         img_emb normalized image embedding tensor batch from CLIP
         """
-        # with torch.no_grad():
-        #     # TODO Assumes logit_scale.exp() = 100.
-        #     pre_quant_contrastive_loss = clip_loss_from_embeds(img_emb, text_emb, 100.0)
+        alpha = 10
         res = self.vision_vq_adapter(img_emb, return_perplexity=True)
-        img_emb = res["z"]
-        quant_loss = res["loss"]
+        quant_img_emb = res["z"]
+        cmt_loss = res["loss"]
         perplexity = res["perplexity"]
 
-        img_emb = img_emb / img_emb.norm(dim=-1, keepdim=True)
+        rec_loss = torch.nn.functional.l1_loss(img_emb, quant_img_emb)
 
-        loss = quant_loss
-        # contrastive_loss = clip_loss_from_embeds(img_emb, text_emb, 100.0)
-
-        # loss = contrastive_loss + quant_loss
+        loss = rec_loss + alpha * cmt_loss
 
         logs = dict(
             loss=loss,
+            rec_loss=rec_loss,
+            cmt_loss=cmt_loss,
             perplexity=perplexity,
         )
-
+        # print("img, quant")
+        # print(img_emb)
+        # print()
+        # print(quant_img_emb)
+        # print()
+        # print(res['codes'].shape, res["codes"])
         return loss, logs
 
     def validation_step(self, batch, batch_idx):
-        print("Run validation step")
-        self.train()
         img_emb = batch
         loss, logs = self.step(img_emb)
-        self.log("val/loss", loss, sync_dist=True)
-        self.log_dict({"v_" + k: v for k, v in logs.items()})
+
+        self.log_dict({"val_" + k: v for k, v in logs.items()})
         return loss
 
     def training_step(self, batch, _):
         img_emb = batch
         loss, logs = self.step(img_emb)
-        self.log("train/loss", loss)
-        self.log_dict({"t_" + k: v for k, v in logs.items()})
+        self.log_dict({"train_" + k: v for k, v in logs.items()})
         return loss
 
     def configure_optimizers(self):

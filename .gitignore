@@ -8,3 +8,4 @@ vq_clip.egg-info/
 .vq-clip
 logs/
 wandb/
+vq-clip-minecraft/
